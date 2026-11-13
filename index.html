@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日記</title>
+<style>
+:root{--bg:#faf8f4;--fg:#2a2622;--mut:#7a7168;--card:#fff;--line:#e6e0d6;--acc:#b5532f;--accfg:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1a18;--fg:#ece6dd;--mut:#9a9186;--card:#26231f;--line:#3a352f;--acc:#e08a60;--accfg:#1c1a18;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1c1a18;--fg:#ece6dd;--mut:#9a9186;--card:#26231f;--line:#3a352f;--acc:#e08a60;--accfg:#1c1a18;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.8 "Hiragino Sans","Yu Gothic",Meiryo,sans-serif}
+main{max-width:680px;margin:0 auto;padding:32px 18px 64px}
+h1{font-size:1.5rem;margin:0 0 4px}
+.sub{color:var(--mut);font-size:.85rem;margin:0 0 28px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+.date{color:var(--mut);font-size:.8rem}
+.title{font-weight:700;font-size:1.1rem;margin:2px 0 6px}
+.body{white-space:pre-wrap;word-break:break-word}
+input,textarea,select{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:10px}
+select{width:auto;background:var(--card);padding:6px 10px;margin-bottom:12px}
+textarea{min-height:150px;resize:vertical}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);padding:6px 14px;margin-right:8px}
+button.main{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+h2.month{font-size:1rem;color:var(--mut);margin:24px 0 10px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.empty{color:var(--mut);text-align:center;padding:40px 0}
+.note{color:var(--mut);font-size:.85rem}
+#msg{color:var(--acc);font-size:.85rem}
+#out{min-height:200px;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+<main>
+  <h1>日記</h1>
+  <p class="sub">読むだけのページです。</p>
+
+  <section id="writer" class="card" hidden>
+    <p class="note">書き方：下に書いて「JSONを作る」→ コピー → GitHubの entries.json を編集して全部貼り替え → Commit。</p>
+    <input id="d" type="date">
+    <input id="t" type="text" placeholder="タイトル（なくてもOK）">
+    <textarea id="b" placeholder="今日のこと"></textarea>
+    <button class="main" id="make">JSONを作る</button><span id="msg"></span>
+    <div id="outwrap" hidden>
+      <textarea id="out" readonly></textarea>
+      <button id="copy">コピー</button>
+    </div>
+  </section>
+
+  <select id="mon" hidden></select>
+  <div id="list"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let entries = [], curMon = "all";
+
+function today() {
+  const n = new Date();
+  return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-" + String(n.getDate()).padStart(2, "0");
+}
+function say(t) { $("msg").textContent = t; }
+function fmt(d) {
+  const p = d.split("-").map(Number);
+  return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
+}
+function ym(m) { return m.slice(0, 4) + "年" + Number(m.slice(5)) + "月"; }
+
+function render() {
+  const list = $("list");
+  list.textContent = "";
+  const all = entries.slice().sort((a, b) => (b.d + b.id).localeCompare(a.d + a.id));
+  const months = [];
+  all.forEach(x => { const m = x.d.slice(0, 7); if (months.indexOf(m) < 0) months.push(m); });
+  if (curMon !== "all" && months.indexOf(curMon) < 0) curMon = "all";
+  const sel = $("mon");
+  sel.hidden = months.length < 2;
+  sel.textContent = "";
+  [["all", "すべての月"]].concat(months.map(m => [m, ym(m)])).forEach(p => {
+    const o = document.createElement("option"); o.value = p[0]; o.textContent = p[1]; sel.appendChild(o);
+  });
+  sel.value = curMon;
+  sel.onchange = () => { curMon = sel.value; render(); };
+  const shown = curMon === "all" ? all : all.filter(x => x.d.slice(0, 7) === curMon);
+  if (!shown.length) {
+    const e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = "まだ日記はありません";
+    list.appendChild(e);
+  }
+  let lastM = "";
+  shown.forEach(en => {
+    const m = en.d.slice(0, 7);
+    if (m !== lastM) {
+      lastM = m;
+      const h = document.createElement("h2"); h.className = "month"; h.textContent = ym(m);
+      list.appendChild(h);
+    }
+    const c = document.createElement("article");
+    c.className = "card";
+    const d = document.createElement("div"); d.className = "date"; d.textContent = fmt(en.d);
+    c.appendChild(d);
+    if (en.t) { const t = document.createElement("div"); t.className = "title"; t.textContent = en.t; c.appendChild(t); }
+    const b = document.createElement("div"); b.className = "body"; b.textContent = en.b;
+    c.appendChild(b);
+    list.appendChild(c);
+  });
+}
+
+function showWriter() { $("writer").hidden = location.hash !== "#write"; }
+window.addEventListener("hashchange", showWriter);
+showWriter();
+$("d").value = today();
+
+$("make").onclick = () => {
+  const body = $("b").value.trim();
+  if (!body) { say("本文を書いてください"); return; }
+  const rec = { id: String(Date.now()), d: $("d").value || today(), t: $("t").value.trim(), b: body };
+  $("out").value = JSON.stringify(entries.concat(rec), null, 2);
+  $("outwrap").hidden = false;
+  say("");
+};
+$("copy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("out").value); say("コピーしました"); }
+  catch (e) { $("out").select(); say("選択しました。コピーしてください"); }
+};
+
+fetch("entries.json", { cache: "no-store" })
+  .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+  .then(j => { entries = Array.isArray(j) ? j : []; render(); })
+  .catch(() => {
+    const e = document.createElement("div");
+    e.className = "empty";
+    e.textContent = "entries.json を読み込めませんでした（ファイルを直接開いていると動きません）";
+    $("list").appendChild(e);
+  });
+</script>
+</body>
+</html>
